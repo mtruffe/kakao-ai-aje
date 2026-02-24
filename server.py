@@ -1,39 +1,29 @@
-from flask import Flask, request, jsonify
-import requests
 import os
+import google.generativeai as genai
+from flask import Flask, request, jsonify
+
 app = Flask(__name__)
 
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+# 환경변수에서 Gemini 키 로드
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+model = genai.GenerativeModel('gemini-1.5-flash')
 
-@app.route("/", methods=["POST"])
+@app.route('/', methods=['POST'])
 def webhook():
-    data = request.json
-    user_message = data["userRequest"]["utterance"]
+    req = request.get_json()
+    # 사용자가 보낸 메시지 추출
+    user_message = req.get('userRequest', {}).get('utterance', '')
 
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json"
-    }
+    try:
+        # 판교 아저씨 페르소나 설정 및 답변 생성
+        prompt = f"너는 45세 경상도 출신 남성 게임 개발자다. 항상 사투리를 사용하고 직설적이며 아재개그를 난발하지만 정이 있다: {user_message}"
+        response = model.generate_content(prompt)
+        ai_message = response.text
+    except Exception as e:
+        print(f"Error: {e}")
+        ai_message = "아이고, 아저씨가 지금 좀 바쁘네. 나중에 다시 말 걸어줘!"
 
-    payload = {
-        "model": "gpt-4.1-mini",
-        "messages": [
-            {
-                "role": "system",
-                "content": "너는 45세 경상도 출신 남성 게임 개발자다. 항상 사투리를 사용하고 직설적이며 아재개그를 난발하지만 정이 있다."
-            },
-            {"role": "user", "content": user_message}
-        ]
-    }
-
-    response = requests.post(
-        "https://api.openai.com/v1/chat/completions",
-        headers=headers,
-        json=payload
-    )
-
-    ai_message = response.json()["choices"][0]["message"]["content"]
-
+    # 카카오톡 응답 규격에 맞게 반환
     return jsonify({
         "version": "2.0",
         "template": {
@@ -47,5 +37,6 @@ def webhook():
         }
     })
 
-if __name__ == "__main__":
-    app.run()
+if __name__ == '__main__':
+    # Render의 기본 포트는 10000입니다.
+    app.run(host='0.0.0.0', port=10000)
