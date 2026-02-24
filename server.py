@@ -1,8 +1,6 @@
-server.py
 from flask import Flask, request, jsonify
 import requests
 import os
-
 app = Flask(__name__)
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
