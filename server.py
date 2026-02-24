@@ -4,89 +4,48 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# ==============================
-# 1️⃣ API 키 확인
-# ==============================
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+# 1. API 키 설정
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 
-if not GEMINI_API_KEY:
-    raise ValueError("GEMINI_API_KEY 환경변수가 설정되지 않았습니다.")
-
-genai.configure(api_key=GEMINI_API_KEY)
-
-# ==============================
-# 2️⃣ 최신 안정 모델 사용
-# ==============================
-model = genai.GenerativeModel("gemini-1.5-flash")
-
-
-# ==============================
-# 3️⃣ 카카오 웹훅 엔드포인트
-# ==============================
-@app.route("/", methods=["POST"])
-def webhook():
+# 2. Gemma 3 모델 설정 (지인분이 추천해주신 모델로 교체)
+# gemma-3-12b-it은 성능과 속도 밸런스가 가장 좋습니다.
+try:
+    model = genai.GenerativeModel('gemma-3-12b-it')
+except:
+    # 혹시 몰라 다른 Gemma 3 모델도 예비용으로 설정
     try:
-        # 카카오 JSON 안전 파싱
-        req = request.get_json(force=True)
+        model = genai.GenerativeModel('gemma-3-4b-it')
+    except:
+        model = genai.GenerativeModel('gemini-1.5-flash')
 
-        if not req:
-            return jsonify({"error": "Invalid JSON"}), 400
+@app.route('/', methods=['POST'])
+def webhook():
+    req = request.get_json()
+    user_message = req.get('userRequest', {}).get('utterance', '')
 
-        user_message = req.get("userRequest", {}).get("utterance", "")
+    # "아저씨"라고 부를 때만 대답
+    if "아저씨" in user_message:
+        try:
+            prompt = f"너는 45세 경상도 출신 남성 게임 개발자다. 사투리로 짧고 굵게 답해라: {user_message}"
+            response = model.generate_content(prompt)
+            
+            if response and response.text:
+                ai_message = response.text
+            else:
+                ai_message = "마! 아저씨가 지금 서버 돌리느라 바쁘다. 좀 이따 온나!"
+                
+        except Exception as e:
+            print(f"Error detail: {e}")
+            ai_message = f"아저씨 엔진 터졌다! 이유: {str(e)[:50]}"
+    else:
+        # 아저씨 안 부르면 조용히
+        return jsonify({"version": "2.0", "template": {"outputs": []}})
 
-        # "아저씨" 포함될 때만 반응
-        if "아저씨" not in user_message:
-            return jsonify({
-                "version": "2.0",
-                "template": {"outputs": []}
-            })
+    return jsonify({
+        "version": "2.0",
+        "template": { "outputs": [{ "simpleText": { "text": ai_message } }] }
+    })
 
-        # 프롬프트
-        prompt = f"""
-        너는 45세 경상도 출신 남성 게임 개발자다.
-        사투리로 짧게 한 문장으로만 답해라.
-        사용자 말: {user_message}
-        """
-
-        response = model.generate_content(prompt)
-
-        # 응답 안전 처리
-        ai_message = response.text if response and response.text else \
-            "마! 지금 빌드 돌리는 중이다! 좀 있다 오이소!"
-
-        return jsonify({
-            "version": "2.0",
-            "template": {
-                "outputs": [
-                    {
-                        "simpleText": {
-                            "text": ai_message.strip()
-                        }
-                    }
-                ]
-            }
-        })
-
-    except Exception as e:
-        print("🔥 서버 에러 발생:", e)
-
-        return jsonify({
-            "version": "2.0",
-            "template": {
-                "outputs": [
-                    {
-                        "simpleText": {
-                            "text": "아재 지금 디버깅 지옥이다! 나중에 온나!"
-                        }
-                    }
-                ]
-            }
-        })
-
-
-# ==============================
-# 4️⃣ Render 실행용
-# ==============================
-if __name__ == "__main__":
+if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host='0.0.0.0', port=port)
