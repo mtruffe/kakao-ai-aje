@@ -7,38 +7,32 @@ app = Flask(__name__)
 # 1. API 키 설정
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 
-# 2. Gemma 3 모델 설정 (지인분이 추천해주신 모델로 교체)
-# gemma-3-12b-it은 성능과 속도 밸런스가 가장 좋습니다.
-try:
-    model = genai.GenerativeModel('gemma-3-12b-it')
-except:
-    # 혹시 몰라 다른 Gemma 3 모델도 예비용으로 설정
-    try:
-        model = genai.GenerativeModel('gemma-3-4b-it')
-    except:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+# 2. 모델 설정: 12b 대신 더 가볍고 빠른 4b 모델을 우선 사용합니다.
+# 4b 모델이 대답 속도가 훨씬 빨라서 5초 타임아웃을 피하기 좋습니다.
+model = genai.GenerativeModel('gemma-3-4b-it')
 
 @app.route('/', methods=['POST'])
 def webhook():
     req = request.get_json()
     user_message = req.get('userRequest', {}).get('utterance', '')
 
-    # "아저씨"라고 부를 때만 대답
     if "아저씨" in user_message:
         try:
-            prompt = f"너는 45세 경상도 출신 남성 게임 개발자다. 사투리로 짧고 굵게 답해라: {user_message}"
+            # 아저씨가 너무 길게 말하면 또 타임아웃 걸리니까 '최대한 짧게'를 강조합니다.
+            prompt = f"너는 45세 경상도 아재 게임 개발자다. 아주 짧게 한 문장으로 사투리로 답해라: {user_message}"
+            
+            # 답변 생성 (대기 시간을 줄이기 위해 설정을 추가할 수도 있습니다)
             response = model.generate_content(prompt)
             
             if response and response.text:
                 ai_message = response.text
             else:
-                ai_message = "마! 아저씨가 지금 서버 돌리느라 바쁘다. 좀 이따 온나!"
+                ai_message = "마! 지금 서버가 좀 느리네. 다시 함 물어바라!"
                 
         except Exception as e:
-            print(f"Error detail: {e}")
-            ai_message = f"아저씨 엔진 터졌다! 이유: {str(e)[:50]}"
+            # 에러 발생 시 아주 짧은 고정 멘트만 던집니다.
+            ai_message = "아이고, 아저씨 지금 바쁘다! 나중에 온나!"
     else:
-        # 아저씨 안 부르면 조용히
         return jsonify({"version": "2.0", "template": {"outputs": []}})
 
     return jsonify({
