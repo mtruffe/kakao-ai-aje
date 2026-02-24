@@ -38,5 +38,6 @@ def webhook():
     })
 
 if __name__ == '__main__':
-    # Render의 기본 포트는 10000입니다.
-    app.run(host='0.0.0.0', port=10000)
+    # Render는 환경 변수로 PORT를 주기도 하므로 아래처럼 쓰는 게 가장 안전합니다.
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
