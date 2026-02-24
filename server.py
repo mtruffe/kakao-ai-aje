@@ -4,16 +4,21 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# 환경변수에서 Gemini 키 로드
+# 1. API 키 설정
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 
-# 404 에러 및 v1beta 문제를 방지하기 위한 가장 안정적인 설정입니다.
-# models/ 를 제거하고 모델명만 적거나, 라이브러리가 추천하는 기본형을 사용합니다.
+# 2. 모델 설정 (404 에러를 잡기 위한 이중 안전장치)
+# 라이브러리 버전에 따라 모델명을 찾는 방식이 다르기 때문에 둘 다 시도합니다.
 try:
+    # 최신 라이브러리 방식
     model = genai.GenerativeModel('gemini-1.5-flash')
 except Exception:
-    # 혹시나 해서 예비용으로 pro 모델도 준비해둡니다.
-    model = genai.GenerativeModel('gemini-pro')
+    try:
+        # 구버전 라이브러리 방식
+        model = genai.GenerativeModel('models/gemini-1.5-flash')
+    except Exception:
+        # 정 안되면 가장 안정적인 프로 모델 사용
+        model = genai.GenerativeModel('gemini-pro')
 
 @app.route('/', methods=['POST'])
 def webhook():
@@ -28,20 +33,19 @@ def webhook():
         # 답변 생성
         response = model.generate_content(prompt)
         
-        # 404 에러가 해결되었다면 response.text를 읽어옵니다.
-        # v1beta 에러 시 response 객체 자체가 비어있을 수 있어 세밀하게 체크합니다.
-        if response and hasattr(response, 'text'):
-            ai_message = response.text
+        # 답변 읽기 (안전한 접근)
+        if response and response.candidates:
+            # response.text가 오류날 경우를 대비해 직접 part 추출
+            ai_message = response.candidates[0].content.parts[0].text
         else:
             ai_message = "아이고, 아저씨가 니 말이 뭔 소린지 모르겠다. 다시 함 말해봐라!"
             
     except Exception as e:
-        # 에러 발생 시 로그를 남기고 사용자에게 알림
         print(f"Error detail: {e}")
-        # 에러 메시지를 카톡으로 보내서 원인을 최종 확인합니다.
-        ai_message = f"아저씨가 고장났심더. 이유: {str(e)[:50]}"
+        # 에러 메시지가 너무 길면 짤라서 보여줌
+        ai_message = f"아저씨 고장났다! 이유: {str(e)[:100]}"
 
-    # 카카오톡 응답 규격 반환
+    # 카카오톡 응답 규격
     return jsonify({
         "version": "2.0",
         "template": {
