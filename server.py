@@ -7,45 +7,46 @@ app = Flask(__name__)
 # 1. API 키 설정
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 
-# 2. 모델 설정 (404 에러를 잡기 위한 이중 안전장치)
-# 라이브러리 버전에 따라 모델명을 찾는 방식이 다르기 때문에 둘 다 시도합니다.
-try:
-    # 최신 라이브러리 방식
-    model = genai.GenerativeModel('gemini-1.5-flash')
-except Exception:
+# 2. 모델 설정 (가장 안정적인 이중 시도 방식)
+def get_model():
     try:
-        # 구버전 라이브러리 방식
-        model = genai.GenerativeModel('models/gemini-1.5-flash')
-    except Exception:
-        # 정 안되면 가장 안정적인 프로 모델 사용
-        model = genai.GenerativeModel('gemini-pro')
+        return genai.GenerativeModel('gemini-1.5-flash')
+    except:
+        return genai.GenerativeModel('gemini-pro')
+
+model = get_model()
 
 @app.route('/', methods=['POST'])
 def webhook():
     req = request.get_json()
-    # 사용자가 보낸 메시지 추출
     user_message = req.get('userRequest', {}).get('utterance', '')
 
-    try:
-        # 경상도 아재 페르소나 설정
-        prompt = f"너는 45세 경상도 출신 남성 게임 개발자다. 항상 사투리를 사용하고 직설적이며 아재개그를 난발하지만 정이 있다. 다음 질문에 짧고 굵게 경상도 사투리로 답해라: {user_message}"
-        
-        # 답변 생성
-        response = model.generate_content(prompt)
-        
-        # 답변 읽기 (안전한 접근)
-        if response and response.candidates:
-            # response.text가 오류날 경우를 대비해 직접 part 추출
-            ai_message = response.candidates[0].content.parts[0].text
-        else:
-            ai_message = "아이고, 아저씨가 니 말이 뭔 소린지 모르겠다. 다시 함 말해봐라!"
+    # [핵심] 메시지에 "아저씨"라는 단어가 있는지 확인합니다.
+    if "아저씨" in user_message:
+        try:
+            # 아저씨라는 호칭을 빼고 질문만 추출해서 보낼 수도 있지만, 
+            # 페르소나 유지를 위해 전체 메시지를 보냅니다.
+            prompt = f"너는 45세 경상도 출신 남성 게임 개발자다. 사투리로 짧게 답해라: {user_message}"
+            response = model.generate_content(prompt)
             
-    except Exception as e:
-        print(f"Error detail: {e}")
-        # 에러 메시지가 너무 길면 짤라서 보여줌
-        ai_message = f"아저씨 고장났다! 이유: {str(e)[:100]}"
+            if response and response.text:
+                ai_message = response.text
+            else:
+                ai_message = "아이고, 아저씨가 지금 딴짓하다가 못 들었다. 다시 함 불러바라!"
+        except Exception as e:
+            # 404 에러 등 문제 발생 시 예비 모델로 재시도
+            try:
+                temp_model = genai.GenerativeModel('gemini-pro')
+                response = temp_model.generate_content(f"경상도 사투리로 답해: {user_message}")
+                ai_message = response.text
+            except:
+                ai_message = f"아저씨가 지금 좀 아프다... 이유: {str(e)[:30]}"
+    else:
+        # "아저씨"가 포함되지 않은 메시지에는 아무 대답도 하지 않습니다.
+        # 카카오톡 챗봇에서 응답을 안 보내려면 빈 결과를 보내거나 특정 처리를 합니다.
+        return jsonify({"version": "2.0", "template": {"outputs": []}})
 
-    # 카카오톡 응답 규격
+    # 응답 규격에 맞춰 반환
     return jsonify({
         "version": "2.0",
         "template": {
@@ -60,6 +61,5 @@ def webhook():
     })
 
 if __name__ == '__main__':
-    # Render 포트 바인딩
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
